@@ -4,7 +4,7 @@ import requests
 from io import StringIO
 
 # Page Config
-st.set_page_config(page_title="Gemstone/Jewelry Report Dashboard", layout="wide")
+st.set_page_config(page_title="Gemstone Report Dashboard", layout="wide")
 
 # =========================
 # 1. State Management & Data Loading
@@ -14,9 +14,87 @@ st.set_page_config(page_title="Gemstone/Jewelry Report Dashboard", layout="wide"
 # Custom CSS (Cleaned up to correct header visibility)
 st.markdown("""
     <style>
+        /* Import Google Fonts */
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@500;600;700&display=swap');
+
+        /* targeted font application */
+        html, body, [class*="css"], .stApp, .stMarkdown, .stDataFrame, .stTable {
+            font-family: 'Inter', sans-serif;
+            font-weight: 600 !important; /* Bold everywhere as requested */
+        }
+        
+        /* Ensure inputs and table text are also bold */
+        .stTextInput input, .stNumberInput input, .stSelectbox, .stMultiSelect {
+            font-weight: 600 !important;
+        }
+
+        /* 1. Logo / Title Styling */
+        h1 {
+            font-family: 'Outfit', sans-serif !important;
+            font-weight: 700 !important;
+            background: linear-gradient(90deg, #4F46E5 0%, #9333EA 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            font-size: 3rem !important;
+            padding-bottom: 0.5rem;
+        }
+
+        /* 2. Modern Button Styling */
+        div.stButton > button:first-child {
+            background: linear-gradient(135deg, #4F46E5 0%, #7C3AED 100%);
+            color: white !important;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            padding: 0.6rem 1.2rem;
+            letter-spacing: 0.02em;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 6px rgba(79, 70, 229, 0.2);
+        }
+
+        div.stButton > button:first-child:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 15px rgba(79, 70, 229, 0.3);
+            background: linear-gradient(135deg, #4338ca 0%, #6D28D9 100%);
+        }
+        
+        div.stButton > button:first-child:active {
+            transform: translateY(0);
+        }
+
+        /* 3. Headers (General) */
+        h2, h3 {
+             font-family: 'Outfit', sans-serif !important;
+             color: #1F2937;
+        }
+
+        /* --- USER REQUEST: Bold & Red Headers for Table & Sidebar Filters --- */
+        
+        /* Sidebar Headers (Filter Labels) */
+        section[data-testid="stSidebar"] h2, 
+        section[data-testid="stSidebar"] h3, 
+        section[data-testid="stSidebar"] .stMarkdown p strong {
+            color: #DC2626 !important; /* Red color */
+            font-weight: 700 !important;
+        }
+
+        /* Table Headers */
+        [data-testid="stDataFrame"] th {
+            color: #DC2626 !important; /* Red color */
+            font-weight: 700 !important;
+            font-size: 1rem !important;
+        }
+        
+        /* --- USER REQUEST: Bold for Widget Labels (Display Mode, Sort By, etc.) --- */
+        /* Removed forced black color to support both light and dark modes */
+        label, .stWidgetLabel, .stRadio label, .stSelectbox label, p {
+            font-weight: 700 !important;
+        }
+
+        /* Clean up default container padding */
         .block-container {
-            padding-top: 1rem;
-            padding-bottom: 0rem;
+            padding-top: 2rem;
+            padding-bottom: 3rem;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -96,7 +174,7 @@ def process_dataframe(df):
 # =========================
 
 if not st.session_state["show_results"]:
-    st.title("💎 Advanced Gemstone Report")
+    st.title("💎 Update Gemstone Data")
 
 # --- Step 1: Update Data ---
 if not st.session_state["show_results"]:
@@ -111,17 +189,29 @@ if not st.session_state["show_results"]:
         with col2:
             st.info("Click 'Update Data' to fetch the latest report from the server.")
 
-# Load Data (Silent unless error)
+# Load Data (with progress bar)
 RAW_URL = "https://staging.gempundit.com/var/export/report.csv"
+
+# Progress bar for loading
+progress_bar = st.progress(0, text="🔄 Loading gemstone data from server...")
 df_raw = load_data_from_url(RAW_URL)
+progress_bar.progress(50, text="⚙️ Processing data...")
 
 if df_raw.empty:
+    progress_bar.empty()
     st.warning("No data available. Please try updating.")
     st.stop()
 
 df_processed = process_dataframe(df_raw)
+progress_bar.progress(100, text="✅ Data loaded successfully!")
+
+# Clear progress bar after a moment
+import time
+time.sleep(0.5)
+progress_bar.empty()
 
 # --- Step 2: Filters (Cascading) ---
+st.sidebar.image("https://cdn2.gempundit.com/skin/frontend/gempundit/default/images/logo.png", use_container_width=True)
 st.sidebar.header("Step 2: Filter Configuration")
 st.sidebar.markdown("Configure your filters below. Options update sequentially.")
 
@@ -138,8 +228,7 @@ filter_order = [
     ("cut", "Cut"),
     ("treatment", "Treatment"),
     ("origin", "Origin"),
-    ("color", "Color"), # Added Color logic if available (implied dependency) - user didn't ask for color explicitly in dropdowns list but it is key? No, stick to user list + strict order.
-    # User list: treatment, gemstone, shape, cut, dimension_type, origin, product_type, certification
+    ("j_colour", "Colour"), # Added as per user request
     ("dimension_type", "Dimension Type"),
     ("product_type", "Product Type"),
     ("certification", "Certification")
@@ -149,81 +238,164 @@ selected_filters = {}
 
 for col_name, label in filter_order:
     if col_name in current_df.columns:
-        # Get options from currently filtered data
-        options = sorted(current_df[col_name].dropna().unique().astype(str))
+        # Handle NaN values by filling them with "None" so they are selectable
+        # We work on a temporary series to get options
+        temp_series = current_df[col_name].fillna("None").astype(str)
+        options = sorted(temp_series.unique())
         
         # Multiselect
         val = st.sidebar.multiselect(f"{label}", options, key=f"filter_{col_name}")
         
         if val:
             # Apply filter immediately to setup next dropdowns
-            current_df = current_df[current_df[col_name].isin(val)]
+            # If "None" is selected, we need to correct the filter logic to look for actual NaNs or the string "None"
+            
+            # Create a mask for filtering
+            mask = pd.Series(False, index=current_df.index)
+            
+            for v in val:
+                if v == "None":
+                    mask |= (current_df[col_name].isna()) | (current_df[col_name] == "None")
+                else:
+                    mask |= (current_df[col_name] == v)
+            
+            current_df = current_df[mask]
             selected_filters[col_name] = val
 
 st.sidebar.markdown("---")
 st.sidebar.subheader("Range Filters")
 
 # B. Range Filters (Sliders)
-# These act on the result of the dropdowns (or globally, but usually on the result makes sense for bounds, 
-# but fixed global bounds provided stability. Let's use Global bounds for sliders to avoid jumping UI)
-range_cols = ["carat_weight", "price", "weight_ratti"]
+numeric_filters = [
+    ("price", "Price (₹)"),
+    ("carat_weight", "Carat Weight"),
+    ("weight_ratti", "Weight Ratti")
+]
+
 range_selections = {}
 
-for col in range_cols:
+# Helper for Sync
+def update_slider(key_prefix):
+    # Callback: Update from Slider to State
+    val = st.session_state[f"slider_{key_prefix}"]
+    st.session_state[f"min_{key_prefix}"] = val[0]
+    st.session_state[f"max_{key_prefix}"] = val[1]
+
+def update_input(key_prefix):
+    # Callback: Update from Input to State
+    try:
+        new_min = st.session_state[f"min_{key_prefix}"]
+        new_max = st.session_state[f"max_{key_prefix}"]
+        
+        # Validation
+        if new_min > new_max:
+             # If crossed, just swap or clamp? Let's clamp min to max
+             new_min = new_max
+             st.session_state[f"min_{key_prefix}"] = new_min
+             
+        st.session_state[f"slider_{key_prefix}"] = (new_min, new_max)
+    except Exception:
+        pass
+
+for col, label in numeric_filters:
     if col in df_processed.columns:
-        # Determine global min/max
-        min_global = float(df_processed[col].min())
-        max_global = float(df_processed[col].max())
+        # 1. Determine Global Bounds (Data Limits)
+        data_min = float(df_processed[col].min())
+        data_max = float(df_processed[col].max())
         
-        # Safety for NaN/Empty
-        if pd.isna(min_global): min_global = 0.0
-        if pd.isna(max_global): max_global = 1.0
-        
-        step = 1.0 if col == 'price' else 0.01
-        key_slider = f"slider_{col}"
-        
-        # Initialize session state for this slider if not present
-        if key_slider not in st.session_state:
-            st.session_state[key_slider] = (min_global, max_global)
+        if data_min == data_max:
+            data_min = 0.0
+            data_max = max(1.0, data_max)
             
-        current_min, current_max = st.session_state[key_slider]
+        step = 1.0 if col == "price" else 0.01
+        fmt_str = "%.0f" if col == "price" else "%.2f"
+
+        # 2. Initialize Session State if needed
+        if f"min_{col}" not in st.session_state:
+            st.session_state[f"min_{col}"] = data_min
+        if f"max_{col}" not in st.session_state:
+            st.session_state[f"max_{col}"] = data_max
+            
+        # Ensure current state respects data bounds (in case data changed)
+        # (Optional but good for robustness if data refreshes)
         
-        st.sidebar.markdown(f"**{col.replace('_', ' ').title()}**")
+        st.sidebar.markdown(f"**{label}**")
         
-        # Manual Inputs
+        # 3. Sync & Sanitize Session State vs Data
+        # Ensure we don't go out of bounds of the current data if it changed
+        # And ensure min <= max
+        
+        # Current state values
+        cur_min_state = st.session_state[f"min_{col}"]
+        cur_max_state = st.session_state[f"max_{col}"]
+        
+        # Sanitize
+        safe_min = max(data_min, min(cur_min_state, data_max))
+        safe_max = max(data_min, min(cur_max_state, data_max))
+        
+        if safe_min > safe_max:
+             safe_min = safe_max
+             
+        # Update state explicitly so widgets pick it up automatically via 'key'
+        st.session_state[f"min_{col}"] = safe_min
+        st.session_state[f"max_{col}"] = safe_max
+        st.session_state[f"slider_{col}"] = (safe_min, safe_max)
+
+        # 4. Slider
+        # Note: For slider with key, 'value' is used as init behavior but can warn.
+        # Best practice: if key exists, omit value or ensure it matches.
+        # We've set the state above, so we can technically omit value or leave it. 
+        # Streamlit semantics: value is ignored if key in state.
+        sel_range = st.sidebar.slider(
+            f"Range {col}",
+            min_value=data_min,
+            max_value=data_max,
+            # value=(safe_min, safe_max), # Omitted to avoid warning
+            step=step,
+            key=f"slider_{col}",
+            label_visibility="collapsed",
+            on_change=update_slider,
+            kwargs={"key_prefix": col}
+        )
+
+        # 5. Manual Inputs
+        # Remove 'value=' because we set the keys in session_state above.
         c1, c2 = st.sidebar.columns(2)
         with c1:
-            val_min = st.number_input(f"Min {col}", min_value=min_global, max_value=max_global, value=current_min, step=step, key=f"input_min_{col}")
+            st.number_input(
+                "Min",
+                min_value=data_min,
+                max_value=data_max,
+                # value=safe_min, # REMOVED to fix warning
+                step=step,
+                format=fmt_str,
+                key=f"min_{col}",
+                label_visibility="collapsed",
+                on_change=update_input,
+                kwargs={"key_prefix": col}
+            )
         with c2:
-            val_max = st.number_input(f"Max {col}", min_value=min_global, max_value=max_global, value=current_max, step=step, key=f"input_max_{col}")
+            st.number_input(
+                "Max",
+                min_value=data_min,
+                max_value=data_max,
+                # value=safe_max, # REMOVED to fix warning
+                step=step,
+                format=fmt_str,
+                key=f"max_{col}",
+                label_visibility="collapsed",
+                on_change=update_input,
+                kwargs={"key_prefix": col}
+            )
             
-        # Update slider state if inputs changed (basic sync)
-        if val_min != current_min or val_max != current_max:
-             # Ensure valid range
-             if val_min > val_max: val_min = val_max 
-             st.session_state[key_slider] = (val_min, val_max)
-             # Rerun to update slider visually immediately? 
-             # Streamlit might handle it on next pass, but explicit is better if we want instant feedback.
-             # However, avoiding rerun loops. The slider below will pick up the new session_state if we set it.
-        
-        # Slider
-        # We use the session_state key directly so it stays in sync
-        val = st.sidebar.slider(
-            f"Select Range",
-            min_value=min_global,
-            max_value=max_global,
-            step=step,
-            key=key_slider,
-            label_visibility="collapsed" 
-        )
-        range_selections[col] = val
+        range_selections[col] = (safe_min, safe_max)
 
-# --- Step 3: Apply & View ---
 st.sidebar.markdown("---")
-apply_btn = st.sidebar.button("Step 3: Apply Filters & View Report", type="primary")
 
-if apply_btn:
+# --- Step 3: Apply Filters ---
+if st.sidebar.button("Step 3: Apply Filters", type="primary", use_container_width=True):
     st.session_state["show_results"] = True
+    st.session_state["current_page"] = 1  # Reset to page 1 on new filter
     st.rerun()
 
 # =========================
@@ -231,9 +403,12 @@ if apply_btn:
 # =========================
 
 if st.session_state["show_results"]:
+    # Validation: Require specific 'gemstone' filter
+    if "gemstone" not in selected_filters or not selected_filters["gemstone"]:
+        st.warning("⚠ Please select a **Gemstone** to view the report.")
+        st.stop()
+
     # Apply Range Filters to the already dropdown-filtered 'current_df'
-    # Note: 'current_df' has all dropdowns applied. Now apply sliders.
-    
     final_df = current_df.copy()
     
     for col, (sel_min, sel_max) in range_selections.items():
@@ -244,21 +419,51 @@ if st.session_state["show_results"]:
 
     # --- Title ---
     st.title("💎 Filter Gemstone Data")
-
-    # --- Metrics ---
     
-    # View Toggle
-    view_mode = st.radio("Display Mode", ["Table View", "Grid View"], horizontal=True)
+    # --- Formatting for Display (User Request: "Call for Price" if 700000) ---
+    def format_price_display(val):
+        try:
+            if float(val) == 700000:
+                return "Call for Price"
+            return f"₹{val:,.0f}"
+        except:
+            return val
+
+    # Apply formatting to a new column so sorting (on original 'price') still works
+    final_df["display_price"] = final_df["price"].apply(format_price_display)
+
+    # --- Metrics (Calculated on Full Data) ---
+    # (Metrics currently hidden as per previous request, but available if needed)
+    
+    # --- Controls Layout (View Mode + Sort) ---
+    c_view, c_sort_col, c_sort_order = st.columns([2, 3, 2])
+    
+    with c_view:
+        view_mode = st.radio("Display Mode", ["Table View", "Grid View"], horizontal=True)
+        
+    with c_sort_col:
+        sort_options = [
+            "None", "price", "carat_weight", "weight_ratti", "sku", "name", 
+            "gemstone", "cut", "shape"
+        ]
+        sort_options = [c for c in sort_options if c == "None" or c in final_df.columns]
+        
+        sort_by = st.selectbox("Sort Data By", sort_options, index=0)
+        
+    with c_sort_order:
+        sort_order = st.radio("Order", ["Ascending", "Descending"], horizontal=True)
+
+    # Apply Sorting
+    if sort_by and sort_by != "None":
+        ascending = (sort_order == "Ascending")
+        final_df = final_df.sort_values(by=sort_by, ascending=ascending)
 
     # --- Column Selector (LOCKED) ---
-    # User requested fixed columns:
     view_cols = [
-        "sku", "name", "url_key", "treatment", "carat_weight", "weight_ratti", "price",
-        "gemstone", "shape", "cut", "dimension_type", "gemstone2", "origin", 
+        "sku", "name", "url_key", "treatment", "carat_weight", "weight_ratti", "display_price",
+        "gemstone", "j_colour", "shape", "cut", "dimension_type", "gemstone2", "origin", 
         "product_type", "certification", "image"
     ]
-    
-    # Filter to only those present in the dataframe to avoid errors
     view_cols = [c for c in view_cols if c in final_df.columns]
     
     if view_mode == "Table View":
@@ -268,36 +473,98 @@ if st.session_state["show_results"]:
             use_container_width=True,
             hide_index=True,
             column_config={
-                "sku": st.column_config.TextColumn("SKU", width="small"),
-                "name": st.column_config.TextColumn("Name", width="medium"),
-                "url_key": st.column_config.LinkColumn("Product Link", display_text="Click", width="small"),
-                "treatment": st.column_config.TextColumn("Treatment", width="medium"),
-                "carat_weight": st.column_config.NumberColumn("Carat Weight", format="%.2f", width="small"),
-                "weight_ratti": st.column_config.NumberColumn("Weight Ratti", format="%.2f", width="small"),
-                "price": st.column_config.NumberColumn("Price", format="₹%.0f", width="small"),
-                "gemstone": st.column_config.TextColumn("Gemstone", width="small"),
-                "shape": st.column_config.TextColumn("Shape", width="small"),
-                "cut": st.column_config.TextColumn("Cut", width="small"),
-                "dimension_type": st.column_config.TextColumn("Dimension Type", width="medium"),
-                "gemstone2": st.column_config.TextColumn("Gemstone2", width="small"),
-                "origin": st.column_config.TextColumn("Origin", width="small"),
-                "product_type": st.column_config.TextColumn("Product Type", width="medium"),
-                "certification": st.column_config.TextColumn("Certification", width="medium"),
-                "image": st.column_config.ImageColumn("Image", help="Product Image", width="small"),
+                "sku": st.column_config.TextColumn("Sku"),
+                "name": st.column_config.TextColumn("Name"),
+                "url_key": st.column_config.LinkColumn("Product Link", display_text="Click"),
+                "treatment": st.column_config.TextColumn("Treatment"),
+                "carat_weight": st.column_config.NumberColumn("Carat Weight", format="%.2f"),
+                "weight_ratti": st.column_config.NumberColumn("Weight Ratti", format="%.2f"),
+                "display_price": st.column_config.TextColumn("Price"),
+                "gemstone": st.column_config.TextColumn("Gemstone"),
+                "j_colour": st.column_config.TextColumn("Colour"),
+                "shape": st.column_config.TextColumn("Shape"),
+                "cut": st.column_config.TextColumn("Cut"),
+                "dimension_type": st.column_config.TextColumn("Dimension Type"),
+                "gemstone2": st.column_config.TextColumn("Gemstone2"),
+                "origin": st.column_config.TextColumn("Origin"),
+                "product_type": st.column_config.TextColumn("Product Type"),
+                "certification": st.column_config.TextColumn("Certification"),
+                "image": st.column_config.ImageColumn("Image", help="Product Image"),
             }
         )
     else:
-        # --- Grid View ---
-        st.markdown(f"**Showing {len(final_df)} results**")
+        # --- Grid View with Pagination ---
+        
+        # Pagination Settings
+        ITEMS_PER_PAGE = 48
+        
+        # Initialize Page State
+        if "current_page" not in st.session_state:
+            st.session_state["current_page"] = 1
+            
+        # Calculate Pages
+        total_items = len(final_df)
+        total_pages = max(1, (total_items + ITEMS_PER_PAGE - 1) // ITEMS_PER_PAGE)
+        
+        # Ensure current page is valid
+        if st.session_state["current_page"] > total_pages:
+             st.session_state["current_page"] = total_pages
+        
+        # Grid View Loop (Using Paginated Data)
+        
+        # Slice Data
+        start_idx = (st.session_state["current_page"] - 1) * ITEMS_PER_PAGE
+        end_idx = start_idx + ITEMS_PER_PAGE
+        paginated_df = final_df.iloc[start_idx:end_idx]
         
         # Grid View - Row based iteration for better alignment
         # We iterate in chunks of 4 to keep rows aligned
         COLS_PER_ROW = 4
-        for i in range(0, len(final_df), COLS_PER_ROW):
+        for i in range(0, len(paginated_df), COLS_PER_ROW):
             cols = st.columns(COLS_PER_ROW)
-            batch = final_df.iloc[i : i + COLS_PER_ROW]
+            batch = paginated_df.iloc[i : i + COLS_PER_ROW]
             
             for j, (idx, row) in enumerate(batch.iterrows()):
+                with cols[j]:
+                    with st.container(border=True):
+                        # Image
+                        if pd.notna(row.get('image')) and row['image']:
+                            st.image(row['image'], use_container_width=True)
+                        
+                        # Name & SKU
+                        st.markdown(f"**{row.get('name', '')}**")
+                        st.caption(f"SKU: {row.get('sku', 'N/A')}")
+                        
+                        st.caption(f"{row.get('gemstone', '')} - {row.get('shape', '')}")
+                        
+                        # Price Display Logic
+                        # Use the pre-calculated display column or re-calculate
+                        display_text = row.get('display_price', f"₹{row.get('price', 0):,.0f}")
+                        
+                        st.markdown(f"**{display_text}**")
+                        
+                        if pd.notna(row.get('url_key')):
+                             st.link_button("View Product", row['url_key'])
+
+        st.markdown("---")
+
+        # Pagination Controls (Moved to Bottom)
+        # Using vertical_alignment="center" to fix alignment issues
+        c_prev, c_info, c_next = st.columns([1, 2, 1], vertical_alignment="center")
+        
+        with c_prev:
+            if st.button("Previous", disabled=(st.session_state["current_page"] == 1), use_container_width=True):
+                st.session_state["current_page"] -= 1
+                st.rerun()
+                
+        with c_info:
+            # Centered text, removed manual top padding that caused misalignment
+            st.markdown(f"<div style='text-align: center; font-weight: bold;'>Page {st.session_state['current_page']} of {total_pages} ({total_items} items)</div>", unsafe_allow_html=True)
+            
+        with c_next:
+            if st.button("Next", disabled=(st.session_state["current_page"] == total_pages), use_container_width=True):
+                st.session_state["current_page"] += 1
+                st.rerun()
                 with cols[j]:
                     with st.container(border=True):
                         # Image
