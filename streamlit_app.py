@@ -374,7 +374,7 @@ for col, label in numeric_filters:
                 kwargs={"key_prefix": col}
             )
             
-        range_selections[col] = (safe_min, safe_max)
+        range_selections[col] = (cur_min, cur_max)
 
 st.sidebar.markdown("---")
 
