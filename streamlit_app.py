@@ -315,42 +315,29 @@ for col, label in numeric_filters:
             st.session_state[f"min_{col}"] = data_min
         if f"max_{col}" not in st.session_state:
             st.session_state[f"max_{col}"] = data_max
+        if f"slider_{col}" not in st.session_state:
+            st.session_state[f"slider_{col}"] = (data_min, data_max)
             
-        # Ensure current state respects data bounds (in case data changed)
-        # (Optional but good for robustness if data refreshes)
-        
         st.sidebar.markdown(f"**{label}**")
         
-        # 3. Sync & Sanitize Session State vs Data
-        # Ensure we don't go out of bounds of the current data if it changed
-        # And ensure min <= max
+        # 3. Get current values from session state
+        cur_min = st.session_state[f"min_{col}"]
+        cur_max = st.session_state[f"max_{col}"]
         
-        # Current state values
-        cur_min_state = st.session_state[f"min_{col}"]
-        cur_max_state = st.session_state[f"max_{col}"]
+        # 4. Clamp to data bounds (only if out of range)
+        cur_min = max(data_min, min(cur_min, data_max))
+        cur_max = max(data_min, min(cur_max, data_max))
         
-        # Sanitize
-        safe_min = max(data_min, min(cur_min_state, data_max))
-        safe_max = max(data_min, min(cur_max_state, data_max))
-        
-        if safe_min > safe_max:
-             safe_min = safe_max
-             
-        # Update state explicitly so widgets pick it up automatically via 'key'
-        st.session_state[f"min_{col}"] = safe_min
-        st.session_state[f"max_{col}"] = safe_max
-        st.session_state[f"slider_{col}"] = (safe_min, safe_max)
+        # Ensure min <= max
+        if cur_min > cur_max:
+            cur_min = cur_max
 
         # 4. Slider
-        # Note: For slider with key, 'value' is used as init behavior but can warn.
-        # Best practice: if key exists, omit value or ensure it matches.
-        # We've set the state above, so we can technically omit value or leave it. 
-        # Streamlit semantics: value is ignored if key in state.
         sel_range = st.sidebar.slider(
             f"Range {col}",
             min_value=data_min,
             max_value=data_max,
-            # value=(safe_min, safe_max), # Omitted to avoid warning
+            value=(cur_min, cur_max),
             step=step,
             key=f"slider_{col}",
             label_visibility="collapsed",
@@ -359,14 +346,13 @@ for col, label in numeric_filters:
         )
 
         # 5. Manual Inputs
-        # Remove 'value=' because we set the keys in session_state above.
         c1, c2 = st.sidebar.columns(2)
         with c1:
             st.number_input(
                 "Min",
                 min_value=data_min,
                 max_value=data_max,
-                # value=safe_min, # REMOVED to fix warning
+                value=cur_min,
                 step=step,
                 format=fmt_str,
                 key=f"min_{col}",
@@ -379,7 +365,7 @@ for col, label in numeric_filters:
                 "Max",
                 min_value=data_min,
                 max_value=data_max,
-                # value=safe_max, # REMOVED to fix warning
+                value=cur_max,
                 step=step,
                 format=fmt_str,
                 key=f"max_{col}",
