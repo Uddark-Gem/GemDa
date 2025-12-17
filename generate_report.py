@@ -78,7 +78,7 @@ columns_to_keep = [
     "weight_ratti",
     "price",
     "gemstone",
-    "jcolour",
+    "j_colour",
     "shape",
     "cut",
     "dimension_type",
@@ -128,3 +128,4 @@ print("Final columns used:", list(df_gemstone.columns))
 # =========================
 df_gemstone.to_csv('gemstone_report.csv', index=False)
 print("CSV file 'gemstone_report.csv' created successfully.")
+
